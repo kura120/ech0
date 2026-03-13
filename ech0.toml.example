@@ -1,0 +1,63 @@
+# ech0.toml — Configuration for ech0 knowledge graph memory store
+#
+# All tunable values live here. Nothing is hardcoded in library source.
+# StoreConfig can be constructed programmatically or deserialized from this file.
+
+[store]
+# Path to the redb database file (graph storage)
+graph_path = "./ech0_graph"
+
+# Path to the usearch index file (vector storage)
+vector_path = "./ech0_vectors"
+
+# Dimensionality of embedding vectors — must match the output of your Embedder implementation
+vector_dimensions = 768
+
+[memory]
+# Maximum number of entries in the short-term memory tier.
+# Once capacity is reached, oldest short-term memories are promoted to episodic or pruned.
+short_term_capacity = 50
+
+# Importance score decrease per day without access for episodic memories.
+# Applied when decay() is called. Higher values mean faster forgetting.
+episodic_decay_rate = 0.01
+
+# Importance score decrease per day without access for semantic memories.
+# Semantic memories decay slower than episodic — they represent general facts, not events.
+semantic_decay_rate = 0.005
+
+# Nodes with importance score below this threshold are removed when prune() is called.
+# Range: 0.0 - 1.0
+prune_threshold = 0.1
+
+# Importance score increase when a memory is accessed via search or traversal.
+# Frequently retrieved memories stay alive; unused memories decay naturally.
+importance_boost_on_retrieval = 0.1
+
+[dynamic_linking]
+# Number of semantically similar existing nodes to consider when linking a newly ingested node.
+# Higher values find more connections but cost more embedder calls.
+top_k_candidates = 5
+
+# Minimum cosine similarity between a new node and an existing node to attempt linking.
+# Range: 0.0 - 1.0. Higher values produce fewer but higher-quality links.
+similarity_threshold = 0.75
+
+# Maximum number of new dynamic edges created per ingest operation.
+# Prevents a single large ingest from flooding the graph with links.
+max_links_per_ingest = 10
+
+[contradiction]
+# Policy for handling detected contradictions between new and existing memories.
+#
+# Options:
+#   "escalate"          — return conflict in IngestResult, caller decides (default)
+#   "keep_existing"     — silently keep the existing memory, discard new
+#   "replace_with_new"  — silently replace existing memory with new
+#   "keep_both"         — store both memories with adjusted confidence scores
+resolution_policy = "escalate"
+
+# Minimum confidence score to flag a potential contradiction.
+# Below this threshold, conflicts are ignored as noise.
+# Range: 0.0 - 1.0
+confidence_threshold = 0.8
