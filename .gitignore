@@ -6,8 +6,9 @@
 # ENV
 .env
 
-# editors
-.github
+# instructions
+copilot-instructions.md
+ech0-instructions.md
 
 # executables
 **/*.exe
