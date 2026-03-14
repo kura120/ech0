@@ -133,15 +133,64 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
                 );
             }
         } else {
-            // TODO: Full cold-start rebuild — re-embed all nodes from redb and rebuild
-            // the usearch index. For now, log a warning. The graph is the source of truth
-            // and the index will be populated as new ingests arrive.
+            // Cold-start rebuild — re-embed all nodes from redb and reconstruct the usearch index.
+            // The graph is always the source of truth. If the index file is missing or empty
+            // but redb has nodes, we re-embed every node and rebuild from scratch.
             let node_count = graph.node_count()?;
             if node_count > 0 {
-                warn!(
+                info!(
                     node_count = node_count,
-                    "usearch index missing or empty but graph has nodes — \
-                     cold-start rebuild not yet implemented, index will be populated on new ingests"
+                    "usearch index missing or empty — rebuilding from graph layer"
+                );
+        
+                let all_nodes = graph.all_nodes()?;
+        
+                // Re-embed every node. We do this sequentially to avoid overwhelming
+                // the embedder. A future optimization could batch these calls.
+                let mut entries: Vec<(Uuid, Vec<f32>)> = Vec::with_capacity(all_nodes.len());
+                for node in &all_nodes {
+                    let embed_text = build_embed_text(node);
+                    let embedding = embedder.embed(&embed_text).await.map_err(|error| {
+                        EchoError::embedder_failure(format!(
+                            "cold-start rebuild: failed to embed node {}: {error}",
+                            node.id
+                        ))
+                        .with_context(
+                            ErrorContext::new("store::new::cold_start_rebuild")
+                                .with_source(&error)
+                                .with_field("node_id", node.id.to_string()),
+                        )
+                    })?;
+        
+                    if embedding.len() != config.store.vector_dimensions {
+                        return Err(EchoError::embedder_failure(format!(
+                            "cold-start rebuild: embedder returned {} dimensions for node {}, expected {}",
+                            embedding.len(),
+                            node.id,
+                            config.store.vector_dimensions
+                        )));
+                    }
+        
+                    entries.push((node.id, embedding));
+                }
+        
+                // Rebuild the usearch index from the re-embedded entries
+                let mappings = vector.rebuild_from_embeddings(&entries)?;
+        
+                // Persist the new vector key mappings back to redb so future
+                // cold starts can restore mappings without re-embedding
+                graph.write_vector_keys_batch(&mappings)?;
+        
+                // Save the rebuilt index to disk
+                vector.save().map_err(|error| {
+                    EchoError::storage_failure(format!(
+                        "cold-start rebuild: failed to save rebuilt index: {error}"
+                    ))
+                })?;
+        
+                info!(
+                    rebuilt = mappings.len(),
+                    "cold-start rebuild complete"
                 );
             }
         }
