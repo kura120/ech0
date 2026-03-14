@@ -871,7 +871,7 @@ mod tests {
     /// Create a temporary graph layer for testing.
     fn temp_graph() -> (GraphLayer, NamedTempFile) {
         let file = NamedTempFile::new().expect("failed to create temp file");
-        let path = file.path().to_path_buf();
+        let _path = file.path().to_path_buf();
         // redb needs exclusive access — close the temp file handle first then use the path
         drop(file);
         let file = NamedTempFile::new().expect("failed to create temp file");

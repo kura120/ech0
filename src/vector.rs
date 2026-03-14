@@ -30,7 +30,20 @@ use crate::error::{EchoError, ErrorContext};
 /// Thread safety: the usearch `Index` is internally thread-safe for concurrent reads.
 /// Writes are serialized through the `RwLock` on `label_to_uuid`. The `RwLock` protects
 /// the mapping tables — usearch itself handles its own internal locking.
+
+impl std::fmt::Debug for VectorLayer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VectorLayer")
+            .field("dimensions", &self.dimensions)
+            .field("index_path", &self.index_path)
+            .field("size", &self.index.size())
+            .finish()
+    }
+}
+
 pub struct VectorLayer {
+    
+    
     /// The usearch ANN index.
     index: Index,
 
@@ -478,14 +491,7 @@ impl VectorLayer {
         &self,
         entries: &[(Uuid, Vec<f32>)],
     ) -> Result<Vec<(Uuid, u64)>, EchoError> {
-        // TODO: Full implementation — clear existing index state, re-reserve capacity,
-        // and re-add all entries. For now, delegate to add_batch which handles the core logic.
-        // A production implementation would also want to:
-        // 1. Create a fresh index rather than adding to the existing one
-        // 2. Use bulk-insert APIs if usearch exposes them
-        // 3. Handle partial failures gracefully
-
-        // Clear existing mappings
+        // Clear in-memory mappings
         {
             let mut l2u = self
                 .label_to_uuid
@@ -501,17 +507,30 @@ impl VectorLayer {
             u2l.clear();
         }
         self.next_label.store(0, Ordering::SeqCst);
-
-        // Re-add all entries
+    
+        // Reset the usearch index — wipes all existing vectors and labels,
+        // allowing labels to start from 0 again without duplicate key errors.
+        self.index.reset().map_err(|error| {
+            EchoError::storage_failure(format!("failed to reset usearch index for rebuild: {error}"))
+        })?;
+    
+        // Reserve capacity for the incoming entries
+        let capacity = entries.len().max(1024);
+        self.index.reserve(capacity).map_err(|error| {
+            EchoError::storage_failure(format!(
+                "failed to reserve capacity after reset: {error}"
+            ))
+        })?;
+    
+        // Re-add all entries with fresh labels starting from 0
         let mappings = self.add_batch(entries)?;
-
+    
         info!(
             rebuilt = mappings.len(),
             "usearch index rebuilt from embeddings"
         );
         Ok(mappings)
     }
-
     /// Check whether the index file exists and appears loadable.
     ///
     /// Used during `Store::new()` to decide whether a cold-start rebuild is needed.

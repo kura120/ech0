@@ -704,7 +704,7 @@ mod tests {
 
         let node_a = make_node("fact");
         let node_b = make_node("fact");
-        let node_c = make_node("fact");
+        let _node_c = make_node("fact");
 
         let edge_ab = make_edge(node_a.id, node_b.id, "related_to");
         let edge_unrelated = make_edge(Uuid::new_v4(), Uuid::new_v4(), "unrelated");

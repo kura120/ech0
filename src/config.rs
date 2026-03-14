@@ -46,15 +46,19 @@ impl Default for StoreConfig {
 /// Storage paths and vector dimensionality.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorePathConfig {
-    /// Path to the redb database file (graph storage).
+    #[serde(default = "default_graph_path")]
     pub graph_path: String,
 
-    /// Path to the usearch index file (vector storage).
+    #[serde(default = "default_vector_path")]
     pub vector_path: String,
 
-    /// Dimensionality of embedding vectors. Must match the output of the caller's `Embedder`.
+    #[serde(default = "default_vector_dimensions")]
     pub vector_dimensions: usize,
 }
+
+fn default_graph_path() -> String { "./ech0_graph".to_string() }
+fn default_vector_path() -> String { "./ech0_vectors".to_string() }
+fn default_vector_dimensions() -> usize { 768 }
 
 impl Default for StorePathConfig {
     fn default() -> Self {
@@ -67,28 +71,41 @@ impl Default for StorePathConfig {
 }
 
 /// Memory tier capacities and importance decay parameters.
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryConfig {
     /// Maximum number of entries in the short-term memory tier.
     /// Once capacity is reached, oldest short-term memories are promoted to episodic or pruned.
+    #[serde(default = "default_short_term_capacity")]
     pub short_term_capacity: usize,
 
     /// Importance score decrease per day without access for episodic memories.
     /// Applied when `decay()` is called. Higher values mean faster forgetting.
+    #[serde(default = "default_episodic_decay_rate")]
     pub episodic_decay_rate: f32,
 
     /// Importance score decrease per day without access for semantic memories.
     /// Semantic memories decay slower than episodic — they represent general facts, not events.
+    #[serde(default = "default_semantic_decay_rate")]
     pub semantic_decay_rate: f32,
 
     /// Nodes with importance score below this threshold are removed when `prune()` is called.
     /// Range: 0.0–1.0.
+    #[serde(default = "default_prune_threshold")]
     pub prune_threshold: f32,
 
     /// Importance score increase when a memory is accessed via search or traversal.
     /// Frequently retrieved memories stay alive; unused memories decay naturally.
+    #[serde(default = "default_importance_boost_on_retrieval")]
     pub importance_boost_on_retrieval: f32,
 }
+
+fn default_short_term_capacity() -> usize { 50 }
+fn default_episodic_decay_rate() -> f32 { 0.01 }
+fn default_semantic_decay_rate() -> f32 { 0.005 }
+fn default_prune_threshold() -> f32 { 0.1 }
+fn default_importance_boost_on_retrieval() -> f32 { 0.1 }
+
 
 impl Default for MemoryConfig {
     fn default() -> Self {
@@ -110,16 +127,23 @@ impl Default for MemoryConfig {
 pub struct DynamicLinkingConfig {
     /// Number of semantically similar existing nodes to consider when linking a newly ingested node.
     /// Higher values find more connections but cost more embedder calls.
+    #[serde(default = "default_top_k_candidates")]
     pub top_k_candidates: usize,
 
     /// Minimum cosine similarity between a new node and an existing node to attempt linking.
     /// Range: 0.0–1.0. Higher values produce fewer but higher-quality links.
+    #[serde(default = "default_similarity_threshold")]
     pub similarity_threshold: f32,
 
     /// Maximum number of new dynamic edges created per ingest operation.
     /// Prevents a single large ingest from flooding the graph with links.
+    #[serde(default = "default_max_links_per_ingest")]
     pub max_links_per_ingest: usize,
 }
+
+fn default_top_k_candidates() -> usize { 50 }
+fn default_similarity_threshold() -> f32 { 0.75 }
+fn default_max_links_per_ingest() -> usize { 10 }
 
 impl Default for DynamicLinkingConfig {
     fn default() -> Self {
@@ -141,13 +165,18 @@ pub struct ContradictionConfig {
     ///
     /// Accepts: "escalate", "keep_existing", "replace_with_new", "keep_both".
     /// Default is "escalate" — ech0 never silently resolves conflicts.
+    #[serde(default = "default_resolution_policy")]
     pub resolution_policy: String,
 
     /// Minimum confidence score to flag a potential contradiction.
     /// Below this threshold, conflicts are ignored as noise.
     /// Range: 0.0–1.0.
+    #[serde(default = "default_confidence_threshold")]
     pub confidence_threshold: f32,
 }
+
+fn default_resolution_policy() -> String { "escalate".to_string() }
+fn default_confidence_threshold() -> f32 { 0.8 }
 
 impl Default for ContradictionConfig {
     fn default() -> Self {

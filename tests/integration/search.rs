@@ -6,7 +6,7 @@
 
 use ech0::test_stubs::{MultiNodeStubExtractor, StubEmbedder, StubExtractor};
 use ech0::{
-    EchoError, ErrorCode, MemoryTier, Node, SearchOptions, SearchResult, Store, StoreConfig,
+    ErrorCode, MemoryTier, Node, SearchOptions, Store, StoreConfig,
     TraversalOptions,
 };
 

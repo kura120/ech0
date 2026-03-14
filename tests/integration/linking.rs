@@ -5,7 +5,7 @@
 //! between them. Uses stub `Embedder` and `Extractor` implementations.
 
 use ech0::test_stubs::{MultiNodeStubExtractor, StubEmbedder, StubExtractor};
-use ech0::{Edge, Node, SearchOptions, Store, StoreConfig, TraversalOptions};
+use ech0::{Node, SearchOptions, Store, StoreConfig, TraversalOptions};
 
 use chrono::Utc;
 use tempfile::TempDir;
@@ -171,13 +171,13 @@ async fn linking_pass_completes_for_multiple_ingests() {
     }
 
     // Await all linking tasks to ensure they complete
-    let mut total_edges_created = 0usize;
-    let mut total_nodes_boosted = 0usize;
+    let mut _total_edges_created = 0usize;
+    let mut _total_nodes_boosted = 0usize;
 
     for handle in handles {
         let linking_result = handle.await.expect("linking task should not panic");
-        total_edges_created += linking_result.edges_created;
-        total_nodes_boosted += linking_result.nodes_boosted;
+        _total_edges_created += linking_result.edges_created;
+        _total_nodes_boosted += linking_result.nodes_boosted;
     }
 
     // With zero-vector stubs, all vectors are identical so similarity is ~1.0.

@@ -70,7 +70,7 @@ async fn ingest_succeeds_without_contradiction_detection_feature() {
 #[cfg(feature = "contradiction-detection")]
 mod with_contradiction_detection {
     use super::*;
-    use ech0::{ConflictResolution, ConflictType, ErrorCode};
+    use ech0::{ConflictResolution, ConflictType};
 
     // -----------------------------------------------------------------------
     // Structural: conflicts field exists and is accessible

@@ -61,6 +61,15 @@ pub struct Store<E: Embedder, X: Extractor> {
     extractor: Arc<X>,
 }
 
+impl<E: Embedder, X: Extractor> std::fmt::Debug for Store<E, X> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Store")
+            .field("graph_path", &self.config.store.graph_path)
+            .field("vector_path", &self.config.store.vector_path)
+            .finish()
+    }
+}
+
 impl<E: Embedder, X: Extractor> Store<E, X> {
     /// Create a new `Store` instance, opening or creating the graph and vector
     /// storage at the paths specified in `config`.
@@ -776,7 +785,7 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
                 None
             } else {
                 let linking_config = self.config.dynamic_linking.clone();
-                let graph_for_link = self.graph.clone();
+                let _graph_for_link = self.graph.clone();
                 let vector_for_link = self.vector.clone();
                 let graph_for_edges = self.graph.clone();
                 let graph_for_write = self.graph.clone();

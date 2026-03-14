@@ -49,7 +49,7 @@ tracing = "0.1"
 # Config
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 tempfile = "3"
 toml = "0.8"
 
@@ -61,3 +61,20 @@ ech0 = { path = ".", features = ["_test-helpers"] }
 # This overrides the crates.io version with the local patched copy in third_party/.
 [patch.crates-io]
 usearch = { path = "third_party/usearch-2.24.0" }
+
+# Tests
+[[test]]
+name = "ingest"
+path = "tests/integration/ingest.rs"
+
+[[test]]
+name = "search"
+path = "tests/integration/search.rs"
+
+[[test]]
+name = "linking"
+path = "tests/integration/linking.rs"
+
+[[test]]
+name = "conflict"
+path = "tests/integration/conflict.rs"

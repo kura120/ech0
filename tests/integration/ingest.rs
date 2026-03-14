@@ -6,7 +6,7 @@
 use ech0::test_stubs::{
     FailingEmbedder, FailingExtractor, StubEmbedder, StubExtractor, WrongDimsEmbedder,
 };
-use ech0::{EchoError, ErrorCode, SearchOptions, Store, StoreConfig};
+use ech0::{ErrorCode, SearchOptions, Store, StoreConfig};
 
 use tempfile::TempDir;
 
@@ -104,7 +104,7 @@ async fn ingest_nodes_directly_writes_and_retrieves() {
         source_text: None,
     };
 
-    let node_id = node.id;
+    let _node_id = node.id;
 
     let result = store
         .ingest_nodes(vec![node], Vec::new())
@@ -254,7 +254,7 @@ async fn embedder_failure_propagates() {
     let dir = TempDir::new().expect("temp dir");
     let dims = 32;
 
-    let mut config = temp_config(&dir, dims);
+    let config = temp_config(&dir, dims);
     // FailingEmbedder claims the right dimensions but always fails on embed()
     let embedder = FailingEmbedder { dimensions: dims };
 
@@ -295,7 +295,7 @@ async fn wrong_dimensions_rejected_on_embed() {
 #[tokio::test]
 async fn config_dimensions_mismatch_rejected_on_store_new() {
     let dir = TempDir::new().expect("temp dir");
-    let mut config = temp_config(&dir, 64);
+    let config = temp_config(&dir, 64);
     // Config says 64 dims, embedder says 32
     let embedder = StubEmbedder::new(32);
 
@@ -314,44 +314,41 @@ async fn config_dimensions_mismatch_rejected_on_store_new() {
 async fn failed_ingest_does_not_leave_partial_state() {
     let dir = TempDir::new().expect("temp dir");
     let dims = 32;
-    let config = temp_config(&dir, dims);
 
-    // First, successfully ingest one node so we can verify the count later
-    let good_store = Store::new(
-        temp_config(&dir, dims),
-        StubEmbedder::new(dims),
-        StubExtractor,
-    )
-    .await
-    .expect("store should open");
-
-    good_store
-        .ingest_text("existing node")
-        .await
-        .expect("initial ingest should succeed");
-
-    // Search and verify we have exactly one node
-    let before = good_store
-        .search(
-            "query",
-            SearchOptions {
-                limit: 100,
-                min_importance: 0.0,
-                ..SearchOptions::default()
-            },
+    // First, successfully ingest one node — drop the store before reopening
+    let count_before = {
+        let good_store = Store::new(
+            temp_config(&dir, dims),
+            StubEmbedder::new(dims),
+            StubExtractor,
         )
         .await
-        .expect("search should succeed");
+        .expect("store should open");
 
-    let count_before = before.nodes.len();
-    assert_eq!(
-        count_before, 1,
-        "should have exactly one node before failed ingest"
-    );
+        good_store
+            .ingest_text("existing node")
+            .await
+            .expect("initial ingest should succeed");
 
-    // Now try to ingest with a failing embedder (re-open the store with failing embedder)
-    // Since we can't change the embedder at runtime, we verify that extractor failures
-    // also leave no partial state by trying to ingest with a failing extractor
+        let before = good_store
+            .search(
+                "query",
+                SearchOptions {
+                    limit: 100,
+                    min_importance: 0.0,
+                    ..SearchOptions::default()
+                },
+            )
+            .await
+            .expect("search should succeed");
+
+        let count = before.nodes.len();
+        assert_eq!(count, 1, "should have exactly one node before failed ingest");
+        count
+        // good_store dropped here — redb lock released
+    };
+
+    // Now open a second store on the same path with a failing extractor
     let bad_store = Store::new(
         temp_config(&dir, dims),
         StubEmbedder::new(dims),
@@ -363,7 +360,6 @@ async fn failed_ingest_does_not_leave_partial_state() {
     let failed_result = bad_store.ingest_text("this will fail").await;
     assert!(failed_result.is_err(), "ingest should fail");
 
-    // Verify the count is unchanged after the failed ingest
     let after = bad_store
         .search(
             "query",

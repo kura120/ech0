@@ -144,7 +144,7 @@ fn check_pair_for_conflict(
 
     let confidence = estimate_conflict_confidence(new_node, existing_node);
 
-    if confidence < confidence_threshold {
+    if confidence <= 0.0 || confidence < confidence_threshold {
         return Ok(None);
     }
 
