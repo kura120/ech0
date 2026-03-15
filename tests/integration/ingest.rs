@@ -343,7 +343,10 @@ async fn failed_ingest_does_not_leave_partial_state() {
             .expect("search should succeed");
 
         let count = before.nodes.len();
-        assert_eq!(count, 1, "should have exactly one node before failed ingest");
+        assert_eq!(
+            count, 1,
+            "should have exactly one node before failed ingest"
+        );
         count
         // good_store dropped here — redb lock released
     };

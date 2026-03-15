@@ -13,7 +13,7 @@ use crate::conflict::ConflictResolution;
 ///
 /// Every field has a sensible default via `Default`. Callers can construct this
 /// programmatically, deserialize from TOML, or mix both approaches.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StoreConfig {
     /// Storage paths and vector dimensions.
     #[serde(default)]
@@ -32,17 +32,6 @@ pub struct StoreConfig {
     pub contradiction: ContradictionConfig,
 }
 
-impl Default for StoreConfig {
-    fn default() -> Self {
-        Self {
-            store: StorePathConfig::default(),
-            memory: MemoryConfig::default(),
-            dynamic_linking: DynamicLinkingConfig::default(),
-            contradiction: ContradictionConfig::default(),
-        }
-    }
-}
-
 /// Storage paths and vector dimensionality.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorePathConfig {
@@ -56,9 +45,15 @@ pub struct StorePathConfig {
     pub vector_dimensions: usize,
 }
 
-fn default_graph_path() -> String { "./ech0_graph".to_string() }
-fn default_vector_path() -> String { "./ech0_vectors".to_string() }
-fn default_vector_dimensions() -> usize { 768 }
+fn default_graph_path() -> String {
+    "./ech0_graph".to_string()
+}
+fn default_vector_path() -> String {
+    "./ech0_vectors".to_string()
+}
+fn default_vector_dimensions() -> usize {
+    768
+}
 
 impl Default for StorePathConfig {
     fn default() -> Self {
@@ -100,12 +95,21 @@ pub struct MemoryConfig {
     pub importance_boost_on_retrieval: f32,
 }
 
-fn default_short_term_capacity() -> usize { 50 }
-fn default_episodic_decay_rate() -> f32 { 0.01 }
-fn default_semantic_decay_rate() -> f32 { 0.005 }
-fn default_prune_threshold() -> f32 { 0.1 }
-fn default_importance_boost_on_retrieval() -> f32 { 0.1 }
-
+fn default_short_term_capacity() -> usize {
+    50
+}
+fn default_episodic_decay_rate() -> f32 {
+    0.01
+}
+fn default_semantic_decay_rate() -> f32 {
+    0.005
+}
+fn default_prune_threshold() -> f32 {
+    0.1
+}
+fn default_importance_boost_on_retrieval() -> f32 {
+    0.1
+}
 
 impl Default for MemoryConfig {
     fn default() -> Self {
@@ -141,9 +145,15 @@ pub struct DynamicLinkingConfig {
     pub max_links_per_ingest: usize,
 }
 
-fn default_top_k_candidates() -> usize { 50 }
-fn default_similarity_threshold() -> f32 { 0.75 }
-fn default_max_links_per_ingest() -> usize { 10 }
+fn default_top_k_candidates() -> usize {
+    5
+}
+fn default_similarity_threshold() -> f32 {
+    0.75
+}
+fn default_max_links_per_ingest() -> usize {
+    10
+}
 
 impl Default for DynamicLinkingConfig {
     fn default() -> Self {
@@ -173,16 +183,115 @@ pub struct ContradictionConfig {
     /// Range: 0.0–1.0.
     #[serde(default = "default_confidence_threshold")]
     pub confidence_threshold: f32,
+
+    /// Minimum cosine similarity required to treat two nodes as being about the same subject.
+    /// Applied during the embedding-based phase of subject resolution.
+    /// Range: 0.0–1.0. Higher values reduce false subject matches.
+    #[serde(default = "default_subject_embedding_threshold")]
+    pub subject_embedding_threshold: f32,
+
+    /// Minimum Jaro-Winkler similarity for name-based subject resolution.
+    /// Applied to normalized name strings before falling back to embedding comparison.
+    /// Range: 0.0–1.0.
+    #[serde(default = "default_name_jaro_winkler_threshold")]
+    pub name_jaro_winkler_threshold: f32,
+
+    /// Absolute tolerance for numeric value comparison.
+    /// Values differing by less than this are considered equal regardless of relative magnitude.
+    /// Prevents false positives from floating-point rounding near zero.
+    #[serde(default = "default_numeric_abs_tolerance")]
+    pub numeric_abs_tolerance: f64,
+
+    /// Relative tolerance for numeric value comparison, as a fraction of the larger value.
+    /// Values differing by less than this fraction are considered equal.
+    /// Example: 0.05 means a 5% difference is acceptable.
+    #[serde(default = "default_numeric_rel_tolerance")]
+    pub numeric_rel_tolerance: f64,
+
+    /// Jaro-Winkler threshold below which short text values are considered conflicting.
+    /// Applied to text metadata values shorter than `text_embedding_length_threshold` chars.
+    /// Range: 0.0–1.0.
+    #[serde(default = "default_text_short_jaro_threshold")]
+    pub text_short_jaro_threshold: f32,
+
+    /// Cosine similarity threshold below which prose text values are considered conflicting.
+    /// Applied when embedding-based comparison is used for longer text values.
+    /// Range: 0.0–1.0.
+    #[serde(default = "default_text_embedding_conflict_threshold")]
+    pub text_embedding_conflict_threshold: f32,
+
+    /// Character length above which text values are compared via embedding rather than
+    /// Jaro-Winkler. Short values use string distance; longer prose uses semantic similarity.
+    #[serde(default = "default_text_embedding_length_threshold")]
+    pub text_embedding_length_threshold: usize,
+
+    /// Hard cap on embedder calls made during a single contradiction detection pass.
+    /// When the budget reaches zero, remaining text values are skipped rather than embedded.
+    /// Bounds worst-case latency deterministically.
+    #[serde(default = "default_max_embedder_calls_per_ingest")]
+    pub max_embedder_calls_per_ingest: usize,
+
+    /// Minimum number of keys that must conflict before a `ConflictReport` is emitted.
+    /// Guards against single-key noise triggering false reports.
+    #[serde(default = "default_min_conflicting_keys")]
+    pub min_conflicting_keys: usize,
+
+    /// Optional explicit list of metadata keys to check for contradictions.
+    /// When `Some`, only these keys are compared. When `None`, all scalar keys are checked.
+    /// Callers with domain knowledge should set this to avoid spurious conflicts.
+    #[serde(default)]
+    pub contradiction_keys: Option<Vec<String>>,
 }
 
-fn default_resolution_policy() -> String { "escalate".to_string() }
-fn default_confidence_threshold() -> f32 { 0.8 }
+fn default_resolution_policy() -> String {
+    "escalate".to_string()
+}
+fn default_confidence_threshold() -> f32 {
+    0.8
+}
+fn default_subject_embedding_threshold() -> f32 {
+    0.88
+}
+fn default_name_jaro_winkler_threshold() -> f32 {
+    0.92
+}
+fn default_numeric_abs_tolerance() -> f64 {
+    1e-6
+}
+fn default_numeric_rel_tolerance() -> f64 {
+    0.05
+}
+fn default_text_short_jaro_threshold() -> f32 {
+    0.70
+}
+fn default_text_embedding_conflict_threshold() -> f32 {
+    0.40
+}
+fn default_text_embedding_length_threshold() -> usize {
+    50
+}
+fn default_max_embedder_calls_per_ingest() -> usize {
+    5
+}
+fn default_min_conflicting_keys() -> usize {
+    1
+}
 
 impl Default for ContradictionConfig {
     fn default() -> Self {
         Self {
             resolution_policy: "escalate".to_string(),
             confidence_threshold: 0.8,
+            subject_embedding_threshold: 0.88,
+            name_jaro_winkler_threshold: 0.92,
+            numeric_abs_tolerance: 1e-6,
+            numeric_rel_tolerance: 0.05,
+            text_short_jaro_threshold: 0.70,
+            text_embedding_conflict_threshold: 0.40,
+            text_embedding_length_threshold: 50,
+            max_embedder_calls_per_ingest: 5,
+            min_conflicting_keys: 1,
+            contradiction_keys: None,
         }
     }
 }
@@ -225,6 +334,18 @@ mod tests {
         assert_eq!(config.dynamic_linking.max_links_per_ingest, 10);
         assert_eq!(config.contradiction.resolution_policy, "escalate");
         assert!((config.contradiction.confidence_threshold - 0.8).abs() < f32::EPSILON);
+        assert!((config.contradiction.subject_embedding_threshold - 0.88).abs() < f32::EPSILON);
+        assert!((config.contradiction.name_jaro_winkler_threshold - 0.92).abs() < f32::EPSILON);
+        assert!((config.contradiction.numeric_abs_tolerance - 1e-6).abs() < f64::EPSILON);
+        assert!((config.contradiction.numeric_rel_tolerance - 0.05).abs() < f64::EPSILON);
+        assert!((config.contradiction.text_short_jaro_threshold - 0.70).abs() < f32::EPSILON);
+        assert!(
+            (config.contradiction.text_embedding_conflict_threshold - 0.40).abs() < f32::EPSILON
+        );
+        assert_eq!(config.contradiction.text_embedding_length_threshold, 50);
+        assert_eq!(config.contradiction.max_embedder_calls_per_ingest, 5);
+        assert_eq!(config.contradiction.min_conflicting_keys, 1);
+        assert!(config.contradiction.contradiction_keys.is_none());
     }
 
     #[test]
@@ -252,6 +373,10 @@ mod tests {
             deserialized.contradiction.resolution_policy,
             config.contradiction.resolution_policy
         );
+        assert_eq!(
+            deserialized.contradiction.max_embedder_calls_per_ingest,
+            config.contradiction.max_embedder_calls_per_ingest,
+        );
     }
 
     #[test]
@@ -268,6 +393,30 @@ graph_path = "/custom/path"
         assert_eq!(config.store.vector_path, "./ech0_vectors");
         assert_eq!(config.store.vector_dimensions, 768);
         assert_eq!(config.memory.short_term_capacity, 50);
+    }
+
+    #[test]
+    fn contradiction_keys_none_by_default() {
+        let config = ContradictionConfig::default();
+        assert!(config.contradiction_keys.is_none());
+    }
+
+    #[test]
+    fn contradiction_keys_round_trips_through_toml() {
+        let partial = r#"
+[contradiction]
+contradiction_keys = ["name", "age", "occupation"]
+"#;
+        let config: StoreConfig =
+            toml::from_str(partial).expect("contradiction_keys should deserialize");
+        assert_eq!(
+            config.contradiction.contradiction_keys,
+            Some(vec![
+                "name".to_string(),
+                "age".to_string(),
+                "occupation".to_string()
+            ])
+        );
     }
 
     #[cfg(feature = "contradiction-detection")]

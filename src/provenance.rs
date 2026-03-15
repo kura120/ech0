@@ -123,10 +123,10 @@ pub fn unique_source_texts(nodes: &[Node]) -> Vec<&str> {
     let mut texts = Vec::new();
 
     for node in nodes {
-        if let Some(ref text) = node.source_text {
-            if seen.insert(text.as_str()) {
-                texts.push(text.as_str());
-            }
+        if let Some(ref text) = node.source_text
+            && seen.insert(text.as_str())
+        {
+            texts.push(text.as_str());
         }
     }
 

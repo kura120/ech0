@@ -9,8 +9,8 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use tracing::{debug, info, instrument, warn};
 use usearch::{Index, IndexOptions, MetricKind, ScalarKind};
@@ -30,7 +30,6 @@ use crate::error::{EchoError, ErrorContext};
 /// Thread safety: the usearch `Index` is internally thread-safe for concurrent reads.
 /// Writes are serialized through the `RwLock` on `label_to_uuid`. The `RwLock` protects
 /// the mapping tables — usearch itself handles its own internal locking.
-
 impl std::fmt::Debug for VectorLayer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VectorLayer")
@@ -42,8 +41,6 @@ impl std::fmt::Debug for VectorLayer {
 }
 
 pub struct VectorLayer {
-    
-    
     /// The usearch ANN index.
     index: Index,
 
@@ -507,24 +504,24 @@ impl VectorLayer {
             u2l.clear();
         }
         self.next_label.store(0, Ordering::SeqCst);
-    
+
         // Reset the usearch index — wipes all existing vectors and labels,
         // allowing labels to start from 0 again without duplicate key errors.
         self.index.reset().map_err(|error| {
-            EchoError::storage_failure(format!("failed to reset usearch index for rebuild: {error}"))
+            EchoError::storage_failure(format!(
+                "failed to reset usearch index for rebuild: {error}"
+            ))
         })?;
-    
+
         // Reserve capacity for the incoming entries
         let capacity = entries.len().max(1024);
         self.index.reserve(capacity).map_err(|error| {
-            EchoError::storage_failure(format!(
-                "failed to reserve capacity after reset: {error}"
-            ))
+            EchoError::storage_failure(format!("failed to reserve capacity after reset: {error}"))
         })?;
-    
+
         // Re-add all entries with fresh labels starting from 0
         let mappings = self.add_batch(entries)?;
-    
+
         info!(
             rebuilt = mappings.len(),
             "usearch index rebuilt from embeddings"
@@ -739,10 +736,12 @@ mod tests {
 
         let node_id = Uuid::new_v4();
         assert!(!layer.contains(node_id).expect("contains should succeed"));
-        assert!(layer
-            .get_label(node_id)
-            .expect("get_label should succeed")
-            .is_none());
+        assert!(
+            layer
+                .get_label(node_id)
+                .expect("get_label should succeed")
+                .is_none()
+        );
 
         let label = layer
             .add(node_id, &make_embedding(dims, 0.5))

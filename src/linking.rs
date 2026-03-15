@@ -226,20 +226,32 @@ pub fn discover_candidates_batch(
 ///
 /// Confirmed links ready to be written as edges to the graph layer.
 pub fn confirm_links(candidates: &[LinkCandidate]) -> Vec<ConfirmedLink> {
-    // TODO: In a future version, call the Extractor to determine the semantic
-    // relationship between each pair. For V1, all dynamic links use a generic
-    // relation label. The similarity score is preserved in edge metadata so
-    // callers can inspect link quality.
-
     candidates
         .iter()
-        .map(|candidate| ConfirmedLink {
-            new_node_id: candidate.new_node_id,
-            existing_node_id: candidate.existing_node_id,
-            similarity: candidate.similarity,
-            relation: "dynamically_linked".to_string(),
+        .map(|candidate| {
+            let relation = relation_label_for_similarity(candidate.similarity);
+            ConfirmedLink {
+                new_node_id: candidate.new_node_id,
+                existing_node_id: candidate.existing_node_id,
+                similarity: candidate.similarity,
+                relation: relation.to_string(),
+            }
         })
         .collect()
+}
+
+/// Map a cosine similarity score to a relation label.
+///
+/// Candidates below the linking threshold should not reach this function, but the
+/// `< 0.75` arm guards against it so the label is always meaningful.
+fn relation_label_for_similarity(similarity: f32) -> &'static str {
+    if similarity >= 0.95 {
+        "related_to"
+    } else if similarity >= 0.85 {
+        "similar_to"
+    } else {
+        "associated_with"
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -352,8 +364,7 @@ where
     // Step 1: For each new node, run vector search and collect candidates
     let mut search_results_per_node: Vec<(Uuid, Vec<(Uuid, f32)>)> =
         Vec::with_capacity(new_nodes.len());
-    let mut existing_edges_per_node: Vec<(Uuid, Vec<Uuid>)> =
-        Vec::with_capacity(new_nodes.len());
+    let mut existing_edges_per_node: Vec<(Uuid, Vec<Uuid>)> = Vec::with_capacity(new_nodes.len());
 
     for node in new_nodes {
         match vector_search(node.id) {
@@ -522,8 +533,8 @@ mod tests {
         let new_node = Uuid::new_v4();
 
         let search_results = vec![
-            (new_node, 1.0),           // self — should be excluded
-            (Uuid::new_v4(), 0.85),    // valid
+            (new_node, 1.0),        // self — should be excluded
+            (Uuid::new_v4(), 0.85), // valid
         ];
 
         let candidates = discover_candidates(new_node, &search_results, &config, &[]);
@@ -538,10 +549,7 @@ mod tests {
         let existing_a = Uuid::new_v4();
         let existing_b = Uuid::new_v4();
 
-        let search_results = vec![
-            (existing_a, 0.90),
-            (existing_b, 0.85),
-        ];
+        let search_results = vec![(existing_a, 0.90), (existing_b, 0.85)];
 
         // existing_a is already linked
         let candidates = discover_candidates(new_node, &search_results, &config, &[existing_a]);
@@ -587,26 +595,19 @@ mod tests {
         let node_a = Uuid::new_v4();
         let node_b = Uuid::new_v4();
 
-        let search_a: Vec<(Uuid, f32)> = (0..5)
-            .map(|_| (Uuid::new_v4(), 0.85))
-            .collect();
-        let search_b: Vec<(Uuid, f32)> = (0..5)
-            .map(|_| (Uuid::new_v4(), 0.80))
-            .collect();
+        let search_a: Vec<(Uuid, f32)> = (0..5).map(|_| (Uuid::new_v4(), 0.85)).collect();
+        let search_b: Vec<(Uuid, f32)> = (0..5).map(|_| (Uuid::new_v4(), 0.80)).collect();
 
-        let search_results = vec![
-            (node_a, search_a),
-            (node_b, search_b),
-        ];
+        let search_results = vec![(node_a, search_a), (node_b, search_b)];
 
-        let candidates = discover_candidates_batch(
-            &[node_a, node_b],
-            &search_results,
-            &config,
-            &[],
+        let candidates =
+            discover_candidates_batch(&[node_a, node_b], &search_results, &config, &[]);
+
+        assert_eq!(
+            candidates.len(),
+            3,
+            "should be capped at max_links_per_ingest"
         );
-
-        assert_eq!(candidates.len(), 3, "should be capped at max_links_per_ingest");
     }
 
     #[test]
@@ -625,15 +626,70 @@ mod tests {
         let candidate = LinkCandidate {
             new_node_id: Uuid::new_v4(),
             existing_node_id: Uuid::new_v4(),
-            similarity: 0.88,
+            similarity: 0.97,
         };
 
         let confirmed = confirm_links(&[candidate.clone()]);
         assert_eq!(confirmed.len(), 1);
-        assert_eq!(confirmed[0].relation, "dynamically_linked");
+        assert_eq!(confirmed[0].relation, "related_to");
         assert_eq!(confirmed[0].new_node_id, candidate.new_node_id);
         assert_eq!(confirmed[0].existing_node_id, candidate.existing_node_id);
-        assert!((confirmed[0].similarity - 0.88).abs() < f32::EPSILON);
+        assert!((confirmed[0].similarity - 0.97).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn confirm_links_high_similarity_gets_related_to() {
+        let candidate = LinkCandidate {
+            new_node_id: Uuid::new_v4(),
+            existing_node_id: Uuid::new_v4(),
+            similarity: 0.97,
+        };
+        let confirmed = confirm_links(&[candidate]);
+        assert_eq!(confirmed[0].relation, "related_to");
+    }
+
+    #[test]
+    fn confirm_links_mid_similarity_gets_similar_to() {
+        let candidate = LinkCandidate {
+            new_node_id: Uuid::new_v4(),
+            existing_node_id: Uuid::new_v4(),
+            similarity: 0.88,
+        };
+        let confirmed = confirm_links(&[candidate]);
+        assert_eq!(confirmed[0].relation, "similar_to");
+    }
+
+    #[test]
+    fn confirm_links_lower_similarity_gets_associated_with() {
+        let candidate = LinkCandidate {
+            new_node_id: Uuid::new_v4(),
+            existing_node_id: Uuid::new_v4(),
+            similarity: 0.78,
+        };
+        let confirmed = confirm_links(&[candidate]);
+        assert_eq!(confirmed[0].relation, "associated_with");
+    }
+
+    #[test]
+    fn confirm_links_boundary_at_0_95_is_related_to() {
+        let candidate = LinkCandidate {
+            new_node_id: Uuid::new_v4(),
+            existing_node_id: Uuid::new_v4(),
+            similarity: 0.95,
+        };
+        let confirmed = confirm_links(&[candidate]);
+        assert_eq!(confirmed[0].relation, "related_to");
+    }
+
+    #[test]
+    fn confirm_links_boundary_at_0_85_is_similar_to() {
+        let candidate = LinkCandidate {
+            new_node_id: Uuid::new_v4(),
+            existing_node_id: Uuid::new_v4(),
+            similarity: 0.85,
+        };
+        let confirmed = confirm_links(&[candidate]);
+        assert_eq!(confirmed[0].relation, "similar_to");
     }
 
     #[test]
@@ -828,7 +884,7 @@ mod tests {
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].source, new_node_id);
         assert_eq!(edges[0].target, existing_node_id);
-        assert_eq!(edges[0].relation, "dynamically_linked");
+        assert_eq!(edges[0].relation, "similar_to");
 
         // Verify boost was called for both nodes
         let boosted = boosted_nodes.lock().unwrap();

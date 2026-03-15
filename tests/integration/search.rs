@@ -5,10 +5,7 @@
 //! and hard limit caps.
 
 use ech0::test_stubs::{MultiNodeStubExtractor, StubEmbedder, StubExtractor};
-use ech0::{
-    ErrorCode, MemoryTier, Node, SearchOptions, Store, StoreConfig,
-    TraversalOptions,
-};
+use ech0::{ErrorCode, MemoryTier, Node, SearchOptions, Store, StoreConfig, TraversalOptions};
 
 use chrono::Utc;
 use tempfile::TempDir;
