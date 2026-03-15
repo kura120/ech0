@@ -292,10 +292,10 @@ where
 
         for edge in outgoing_edges {
             // Apply relation filter if configured
-            if let Some(ref filter) = options.relation_filter {
-                if !filter.contains(&edge.relation) {
-                    continue;
-                }
+            if let Some(ref filter) = options.relation_filter
+                && !filter.contains(&edge.relation)
+            {
+                continue;
             }
 
             let target_id = edge.target;
@@ -355,14 +355,14 @@ fn compute_combined_score(
 /// callers should prefer `decay::infer_tier` for consistency.
 fn infer_tier_for_search(node: &Node) -> MemoryTier {
     // Check explicit tier in metadata first
-    if let Some(tier_value) = node.metadata.get("tier") {
-        if let Some(tier_str) = tier_value.as_str() {
-            match tier_str {
-                "short_term" => return MemoryTier::ShortTerm,
-                "episodic" => return MemoryTier::Episodic,
-                "semantic" => return MemoryTier::Semantic,
-                _ => {} // unrecognized — fall through
-            }
+    if let Some(tier_value) = node.metadata.get("tier")
+        && let Some(tier_str) = tier_value.as_str()
+    {
+        match tier_str {
+            "short_term" => return MemoryTier::ShortTerm,
+            "episodic" => return MemoryTier::Episodic,
+            "semantic" => return MemoryTier::Semantic,
+            _ => {} // unrecognized — fall through
         }
     }
 
@@ -438,10 +438,10 @@ where
     result
         .nodes
         .iter()
-        .filter_map(|scored_node| {
+        .map(|scored_node| {
             let node_id = scored_node.node.id;
             let importance = importance_lookup(node_id).unwrap_or(scored_node.node.importance);
-            Some((node_id, importance))
+            (node_id, importance)
         })
         .collect()
 }

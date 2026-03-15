@@ -142,9 +142,9 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
                     node_count = node_count,
                     "usearch index missing or empty — rebuilding from graph layer"
                 );
-        
+
                 let all_nodes = graph.all_nodes()?;
-        
+
                 // Re-embed every node. We do this sequentially to avoid overwhelming
                 // the embedder. A future optimization could batch these calls.
                 let mut entries: Vec<(Uuid, Vec<f32>)> = Vec::with_capacity(all_nodes.len());
@@ -161,7 +161,7 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
                                 .with_field("node_id", node.id.to_string()),
                         )
                     })?;
-        
+
                     if embedding.len() != config.store.vector_dimensions {
                         return Err(EchoError::embedder_failure(format!(
                             "cold-start rebuild: embedder returned {} dimensions for node {}, expected {}",
@@ -170,28 +170,25 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
                             config.store.vector_dimensions
                         )));
                     }
-        
+
                     entries.push((node.id, embedding));
                 }
-        
+
                 // Rebuild the usearch index from the re-embedded entries
                 let mappings = vector.rebuild_from_embeddings(&entries)?;
-        
+
                 // Persist the new vector key mappings back to redb so future
                 // cold starts can restore mappings without re-embedding
                 graph.write_vector_keys_batch(&mappings)?;
-        
+
                 // Save the rebuilt index to disk
                 vector.save().map_err(|error| {
                     EchoError::storage_failure(format!(
                         "cold-start rebuild: failed to save rebuilt index: {error}"
                     ))
                 })?;
-        
-                info!(
-                    rebuilt = mappings.len(),
-                    "cold-start rebuild complete"
-                );
+
+                info!(rebuilt = mappings.len(), "cold-start rebuild complete");
             }
         }
 
@@ -651,10 +648,10 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
         self.graph.delete_nodes_batch(&candidates)?;
 
         // Save vector index after pruning
-        if vectors_pruned > 0 {
-            if let Err(error) = self.vector.save() {
-                warn!(error = %error, "failed to save vector index after prune");
-            }
+        if vectors_pruned > 0
+            && let Err(error) = self.vector.save()
+        {
+            warn!(error = %error, "failed to save vector index after prune");
         }
 
         let report = PruneReport {
@@ -736,7 +733,7 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
                     // Find the new node in our batch
                     if let Some(new_node) = nodes.iter().find(|n| n.id == *node_id) {
                         let detected = conflict::detect_conflicts(
-                            &[new_node.clone()],
+                            std::slice::from_ref(new_node),
                             &existing_candidates,
                             &self.config.contradiction,
                         )?;
@@ -868,12 +865,12 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
                             let boost = config_for_boost.memory.importance_boost_on_retrieval;
                             let updates: Vec<(Uuid, f32)> = node_ids
                                 .iter()
-                                .filter_map(|id| {
+                                .map(|id| {
                                     let current = graph_for_boost
                                         .get_importance(*id)
                                         .unwrap_or(None)
                                         .unwrap_or(0.5);
-                                    Some((*id, current + boost))
+                                    (*id, current + boost)
                                 })
                                 .collect();
                             graph_for_boost.update_importance_batch(&updates)

@@ -533,11 +533,16 @@ async fn traversal_discovers_dynamically_linked_nodes() {
                 traversal.nodes.len()
             );
 
-            // Check that at least one traversed edge is a dynamic edge
-            let has_dynamic_edge = traversal
-                .edges
-                .iter()
-                .any(|e| e.relation == "dynamically_linked");
+            // Check that at least one traversed edge is a dynamic edge.
+            // Dynamic edges are identified by the "dynamic": true metadata marker
+            // set by build_dynamic_edges — not by a fixed relation string, which
+            // is now assigned by the tiered similarity heuristic in confirm_links.
+            let has_dynamic_edge = traversal.edges.iter().any(|e| {
+                e.metadata
+                    .get("dynamic")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+            });
 
             assert!(
                 has_dynamic_edge,

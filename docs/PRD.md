@@ -370,7 +370,7 @@ confidence_threshold = 0.8           # minimum confidence to flag as contradicti
 
 ## 13. Version Roadmap
 
-### V1 — Foundation
+### V1 — Foundation --> DONE! ?
 - Hybrid graph + vector storage (redb + usearch)
 - `Embedder` + `Extractor` traits
 - `ingest_text()` + `ingest_nodes()`

@@ -309,14 +309,14 @@ pub fn build_prune_report(
 /// explicitly as a redb column.
 pub fn infer_tier(node: &Node) -> MemoryTier {
     // Check explicit tier in metadata first
-    if let Some(tier_value) = node.metadata.get("tier") {
-        if let Some(tier_str) = tier_value.as_str() {
-            match tier_str {
-                "short_term" => return MemoryTier::ShortTerm,
-                "episodic" => return MemoryTier::Episodic,
-                "semantic" => return MemoryTier::Semantic,
-                _ => {} // unrecognized tier value — fall through to kind-based heuristic
-            }
+    if let Some(tier_value) = node.metadata.get("tier")
+        && let Some(tier_str) = tier_value.as_str()
+    {
+        match tier_str {
+            "short_term" => return MemoryTier::ShortTerm,
+            "episodic" => return MemoryTier::Episodic,
+            "semantic" => return MemoryTier::Semantic,
+            _ => {} // unrecognized tier value — fall through to kind-based heuristic
         }
     }
 
@@ -645,11 +645,11 @@ mod tests {
     #[test]
     fn prune_identifies_nodes_below_threshold() {
         let nodes = vec![
-                    (Uuid::new_v4(), 0.05f32), // below 0.1
-                    (Uuid::new_v4(), 0.5f32),  // above
-                    (Uuid::new_v4(), 0.09f32), // below 0.1
-                    (Uuid::new_v4(), 0.1f32),  // exactly at threshold — NOT below
-                ];
+            (Uuid::new_v4(), 0.05f32), // below 0.1
+            (Uuid::new_v4(), 0.5f32),  // above
+            (Uuid::new_v4(), 0.09f32), // below 0.1
+            (Uuid::new_v4(), 0.1f32),  // exactly at threshold — NOT below
+        ];
 
         let candidates = identify_prune_candidates(&nodes, 0.1);
         assert_eq!(candidates.len(), 2, "two nodes below threshold");
