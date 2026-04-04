@@ -30,7 +30,7 @@ use crate::schema::{
 };
 use crate::search;
 use crate::traits::{Embedder, ExtractionResult, Extractor};
-use crate::vector::UsearchVectorLayer;
+use crate::vector::DefaultVectorLayer;
 use crate::vector_index::VectorIndex;
 
 #[cfg(feature = "contradiction-detection")]
@@ -75,7 +75,7 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
     /// Create a new `Store` instance, opening or creating the graph and vector
     /// storage at the paths specified in `config`.
     ///
-    /// On cold start, if the usearch index file is missing or corrupt, the store
+    /// On cold start, if the vector index file is missing or corrupt, the store
     /// rebuilds the vector index from redb (the graph is always the source of truth).
     ///
     /// # Errors
@@ -119,7 +119,7 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
 
         // Open vector layer
         let vector =
-            UsearchVectorLayer::open(&config.store.vector_path, config.store.vector_dimensions)?;
+            DefaultVectorLayer::open(&config.store.vector_path, config.store.vector_dimensions)?;
         let vector: Arc<dyn VectorIndex> = Arc::new(vector);
 
         // Cold start: restore vector label mappings from redb

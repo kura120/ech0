@@ -3,8 +3,9 @@
 //! # ech0 — Local-first knowledge graph memory for LLMs
 //!
 //! ech0 is a hybrid knowledge graph + vector memory store backed by redb (graph) and
-//! usearch (vector). The caller provides an LLM via the [`Embedder`] and [`Extractor`]
-//! traits. ech0 handles storage, retrieval, decay, linking, and conflict detection.
+//! a pluggable vector backend (hour by default, usearch optional). The caller provides
+//! an LLM via the [`Embedder`] and [`Extractor`] traits. ech0 handles storage, retrieval,
+//! decay, linking, and conflict detection.
 //!
 //! No cloud. No API keys. No data leaving your machine.
 //!
@@ -30,6 +31,8 @@
 //! | `provenance` | on | Source text stored per node for traceability |
 //! | `contradiction-detection` | on | Conflict flagging when new memory contradicts existing |
 //! | `tokio` | on | Async runtime support via tokio |
+//! | `backend-hora` | on | hora pure-Rust vector backend (default) |
+//! | `backend-usearch` | off | usearch C++-backed vector backend |
 //! | `full` | off | Enables all of the above |
 
 // ---------------------------------------------------------------------------
@@ -91,8 +94,14 @@ pub use schema::{
 // Caller-implemented traits
 pub use traits::{Embedder, ExtractionResult, Extractor};
 
-// Vector index trait
+// Vector index trait and backend re-exports
 pub use vector_index::VectorIndex;
+
+#[cfg(feature = "backend-hora")]
+pub use vector::HoraVectorLayer;
+
+#[cfg(feature = "backend-usearch")]
+pub use vector::UsearchVectorLayer;
 
 // Feature-gated re-exports
 

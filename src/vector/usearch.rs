@@ -17,7 +17,7 @@ use usearch::{Index, IndexOptions, MetricKind, ScalarKind};
 use uuid::Uuid;
 
 use crate::error::{EchoError, ErrorContext};
-use crate::vector_index::VectorIndex;
+use super::VectorIndex;
 
 // ---------------------------------------------------------------------------
 // UsearchVectorLayer
