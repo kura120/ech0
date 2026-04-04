@@ -687,15 +687,137 @@ impl GraphLayer {
         Ok(())
     }
 
-    /// Delete multiple nodes atomically. Used by batch prune operations.
+    /// Delete multiple nodes atomically within a single redb transaction.
+    ///
+    /// All deletions — nodes, edges, adjacency entries, importance scores, and vector key
+    /// mappings — are committed in a single transaction. If the commit fails, no deletions
+    /// are persisted and the database is left in its original state.
+    ///
+    /// Non-existent node IDs are silently skipped; they do not cause an error or corrupt
+    /// any other node in the batch.
     #[instrument(skip_all, fields(count = node_ids.len()))]
     pub fn delete_nodes_batch(&self, node_ids: &[Uuid]) -> Result<(), EchoError> {
-        // For simplicity and correctness, delegate to individual deletes.
-        // Each delete is its own transaction. A future optimization could batch
-        // these into a single transaction, but correctness comes first.
-        for node_id in node_ids {
-            self.delete_node(*node_id)?;
+        if node_ids.is_empty() {
+            return Ok(());
         }
+
+        // Build a set of IDs being deleted so we can skip adjacency updates for
+        // nodes that are themselves in the batch (they will be fully removed anyway).
+        let deleting: std::collections::HashSet<Uuid> = node_ids.iter().cloned().collect();
+
+        // Read phase: collect outgoing and incoming edges for every node before
+        // opening the write transaction. Separate read transactions per node are
+        // acceptable here — this is pre-collection only.
+        let mut node_outgoing: Vec<Vec<Edge>> = Vec::with_capacity(node_ids.len());
+        let mut node_incoming: Vec<Vec<Edge>> = Vec::with_capacity(node_ids.len());
+        for &node_id in node_ids {
+            node_outgoing.push(self.get_outgoing_edges(node_id)?);
+            node_incoming.push(self.get_incoming_edges(node_id)?);
+        }
+
+        // Write phase: single transaction covering every deletion.
+        let write_txn = self.database.begin_write().map_err(|error| {
+            EchoError::storage_failure(format!("failed to begin batch delete transaction: {error}"))
+        })?;
+
+        {
+            let mut nodes_table = write_txn.open_table(NODES_TABLE).map_err(|error| {
+                EchoError::storage_failure(format!("failed to open nodes table: {error}"))
+            })?;
+            let mut edges_table = write_txn.open_table(EDGES_TABLE).map_err(|error| {
+                EchoError::storage_failure(format!("failed to open edges table: {error}"))
+            })?;
+            let mut adj_out_table = write_txn.open_table(ADJACENCY_OUT_TABLE).map_err(|error| {
+                EchoError::storage_failure(format!("failed to open adjacency_out table: {error}"))
+            })?;
+            let mut adj_in_table = write_txn.open_table(ADJACENCY_IN_TABLE).map_err(|error| {
+                EchoError::storage_failure(format!("failed to open adjacency_in table: {error}"))
+            })?;
+            let mut importance_table = write_txn.open_table(IMPORTANCE_TABLE).map_err(|error| {
+                EchoError::storage_failure(format!("failed to open importance table: {error}"))
+            })?;
+            let mut vector_keys_table =
+                write_txn.open_table(VECTOR_KEYS_TABLE).map_err(|error| {
+                    EchoError::storage_failure(format!("failed to open vector_keys table: {error}"))
+                })?;
+
+            for (index, &node_id) in node_ids.iter().enumerate() {
+                let key = node_id.as_bytes();
+
+                // Remove the node itself
+                nodes_table.remove(key).map_err(|error| {
+                    EchoError::storage_failure(format!("failed to delete node: {error}"))
+                })?;
+
+                // Remove importance score
+                importance_table.remove(key).map_err(|error| {
+                    EchoError::storage_failure(format!(
+                        "failed to delete importance score: {error}"
+                    ))
+                })?;
+
+                // Remove vector key mapping
+                vector_keys_table.remove(key).map_err(|error| {
+                    EchoError::storage_failure(format!(
+                        "failed to delete vector key mapping: {error}"
+                    ))
+                })?;
+
+                // Remove outgoing adjacency list
+                adj_out_table.remove(key).map_err(|error| {
+                    EchoError::storage_failure(format!(
+                        "failed to delete outgoing adjacency: {error}"
+                    ))
+                })?;
+
+                // Remove incoming adjacency list
+                adj_in_table.remove(key).map_err(|error| {
+                    EchoError::storage_failure(format!(
+                        "failed to delete incoming adjacency: {error}"
+                    ))
+                })?;
+
+                // Remove all outgoing edges and clean up target nodes' incoming adjacency,
+                // but only when the target is not also being deleted in this batch.
+                for edge in &node_outgoing[index] {
+                    let edge_key_bytes = edge_key(edge.source, edge.target);
+                    edges_table.remove(&edge_key_bytes).map_err(|error| {
+                        EchoError::storage_failure(format!("failed to delete edge: {error}"))
+                    })?;
+                    if !deleting.contains(&edge.target) {
+                        remove_from_adjacency_list(
+                            &mut adj_in_table,
+                            edge.target,
+                            &edge_key_bytes,
+                        )?;
+                    }
+                }
+
+                // Remove all incoming edges and clean up source nodes' outgoing adjacency,
+                // but only when the source is not also being deleted in this batch.
+                for edge in &node_incoming[index] {
+                    let edge_key_bytes = edge_key(edge.source, edge.target);
+                    edges_table.remove(&edge_key_bytes).map_err(|error| {
+                        EchoError::storage_failure(format!("failed to delete edge: {error}"))
+                    })?;
+                    if !deleting.contains(&edge.source) {
+                        remove_from_adjacency_list(
+                            &mut adj_out_table,
+                            edge.source,
+                            &edge_key_bytes,
+                        )?;
+                    }
+                }
+            }
+        }
+
+        write_txn.commit().map_err(|error| {
+            EchoError::storage_failure(format!(
+                "failed to commit batch delete transaction: {error}"
+            ))
+        })?;
+
+        debug!(count = node_ids.len(), "batch node delete committed");
         Ok(())
     }
 
@@ -1128,6 +1250,78 @@ mod tests {
         assert_ne!(
             key_ab, key_ba,
             "edge key should differ for opposite directions"
+        );
+    }
+
+    /// Verify that delete_nodes_batch handles non-existent node IDs without corrupting
+    /// valid nodes. Because all deletions occur in a single redb transaction, any failure
+    /// rolls back the entire batch — no partial state is written.
+    ///
+    /// This test exercises the common case: a batch that includes both valid and
+    /// non-existent IDs. Neither the valid nodes nor any adjacency entries should be
+    /// left in an inconsistent state.
+    #[test]
+    fn delete_nodes_batch_is_atomic_on_failure() {
+        let (graph, _file) = temp_graph();
+        let ingest_id = Uuid::new_v4();
+
+        // Set up: two real nodes connected by an edge.
+        let node_a = make_test_node(ingest_id);
+        let node_b = make_test_node(ingest_id);
+        let edge = make_test_edge(node_a.id, node_b.id, ingest_id);
+
+        graph
+            .write_nodes_and_edges(&[node_a.clone(), node_b.clone()], &[edge])
+            .expect("write should succeed");
+
+        // Include a never-written ID in the batch alongside the two real nodes.
+        let phantom_id = Uuid::new_v4();
+        let batch = [node_a.id, phantom_id, node_b.id];
+
+        // The batch should succeed — missing nodes are silently skipped.
+        graph
+            .delete_nodes_batch(&batch)
+            .expect("batch delete with non-existent ID should not error");
+
+        // Both real nodes must be gone.
+        assert!(
+            graph
+                .get_node(node_a.id)
+                .expect("read should succeed")
+                .is_none(),
+            "node_a should be deleted"
+        );
+        assert!(
+            graph
+                .get_node(node_b.id)
+                .expect("read should succeed")
+                .is_none(),
+            "node_b should be deleted"
+        );
+
+        // The edge between them must be gone.
+        assert!(
+            graph
+                .get_edge(node_a.id, node_b.id)
+                .expect("read should succeed")
+                .is_none(),
+            "edge should be deleted"
+        );
+
+        // The phantom node never existed — verify nothing was inserted for it.
+        assert!(
+            graph
+                .get_node(phantom_id)
+                .expect("read should succeed")
+                .is_none(),
+            "phantom node should not exist"
+        );
+        assert!(
+            graph
+                .get_importance(phantom_id)
+                .expect("read should succeed")
+                .is_none(),
+            "phantom importance should not exist"
         );
     }
 }

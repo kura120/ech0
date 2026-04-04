@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.1.2] — 2026-06-01
+
+### Changed
+
+- **Default vector backend switched from usearch to hora** — `backend-hora` is now in `default` features; `backend-usearch` is an opt-in feature
+- `src/vector.rs` moved to `src/vector/` folder (modular multi-backend layout)
+  - `src/vector/usearch.rs` — usearch C++-backed backend (unchanged behaviour)
+  - `src/vector/hora.rs` — new hora pure-Rust backend (no C++ toolchain required)
+  - `src/vector/mod.rs` — `VectorIndex` trait definition and `DefaultVectorLayer` alias
+- `src/vector_index.rs` is now a backwards-compat re-export shim for `VectorIndex`
+- `Store` now constructs `DefaultVectorLayer` (feature-gated) instead of hardcoding usearch
+- `StubEmbedder` updated to return `vec![1.0f32; dims]` instead of zeros — zero-magnitude embeddings are not valid cosine-similarity inputs
+
+### Added
+
+- `backend-hora` feature: hora brute-force ANN index (pure Rust, default)
+- `backend-usearch` feature: usearch HNSW index (C++ via cxx, optional)
+- `full` feature now includes both `backend-hora` and `backend-usearch`
+- `HoraVectorLayer` public re-export from crate root when `backend-hora` is active
+- `UsearchVectorLayer` public re-export from crate root when `backend-usearch` is active
+- Feature flags table in `lib.rs` doc updated to include `backend-hora` and `backend-usearch`
+
+### Fixed
+
+- hora's `Metric::CosineSimilarity` produces NaN (`dot_product` returns `-(actual dot)` in hora 0.1.1). Worked around by normalising embeddings to unit length and using `Metric::Euclidean` (squared Euclidean), then converting back via `cos(θ) = 1 − dist/2`.
+
+### Subsystems affected
+
+- `src/vector/` (new module layout)
+- `src/store.rs` (backend selection)
+- `src/lib.rs` (public re-exports)
+- `src/test_stubs.rs` (StubEmbedder fix)
+- `Cargo.toml` (feature flags, version bump)
+
+---
+
 ## [0.1.0] — 2026-03-14
 
 ### Added

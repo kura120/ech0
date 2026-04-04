@@ -1,22 +1,24 @@
 [package]
 name = "ech0"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2024"
 description = "Local-first knowledge graph memory for LLMs. No cloud. No API keys. No data leaving your machine."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/ech0-rs/ech0"
+repository = "https://github.com/kura120/ech0"
 readme = "README.md"
 keywords = ["llm", "memory", "knowledge-graph", "vector-search", "local-first"]
 categories = ["database", "data-structures", "science"]
 
 [features]
-default = ["dynamic-linking", "importance-decay", "provenance", "contradiction-detection", "tokio"]
+default = ["dynamic-linking", "importance-decay", "provenance", "contradiction-detection", "tokio", "backend-hora"]
 dynamic-linking = []
 importance-decay = []
 provenance = []
 contradiction-detection = []
 tokio = ["dep:tokio"]
-full = ["dynamic-linking", "importance-decay", "provenance", "contradiction-detection", "tokio"]
+backend-hora = ["dep:hora"]
+backend-usearch = ["dep:usearch"]
+full = ["dynamic-linking", "importance-decay", "provenance", "contradiction-detection", "tokio", "backend-hora", "backend-usearch"]
 
 # Internal feature used to expose test stub implementations (StubEmbedder, StubExtractor, etc.)
 # to integration tests. Not part of the public API — never enable this in production builds.
@@ -26,7 +28,8 @@ _test-helpers = []
 [dependencies]
 # Storage
 redb = "2"
-usearch = { version = "2.24.0", default-features = false, features = ["fp16lib"] }
+usearch = { version = "2.24.0", default-features = false, features = ["fp16lib"], optional = true }
+hora = { version = "0.1.1", optional = true }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
