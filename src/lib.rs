@@ -44,6 +44,7 @@ pub mod search;
 pub mod store;
 pub mod traits;
 pub mod vector;
+pub mod vector_index;
 
 #[cfg(feature = "dynamic-linking")]
 pub mod linking;
@@ -89,6 +90,9 @@ pub use schema::{
 
 // Caller-implemented traits
 pub use traits::{Embedder, ExtractionResult, Extractor};
+
+// Vector index trait
+pub use vector_index::VectorIndex;
 
 // Feature-gated re-exports
 

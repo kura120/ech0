@@ -30,7 +30,8 @@ use crate::schema::{
 };
 use crate::search;
 use crate::traits::{Embedder, ExtractionResult, Extractor};
-use crate::vector::VectorLayer;
+use crate::vector::UsearchVectorLayer;
+use crate::vector_index::VectorIndex;
 
 #[cfg(feature = "contradiction-detection")]
 use crate::conflict;
@@ -56,7 +57,7 @@ use crate::linking;
 pub struct Store<E: Embedder, X: Extractor> {
     config: Arc<StoreConfig>,
     graph: Arc<GraphLayer>,
-    vector: Arc<VectorLayer>,
+    vector: Arc<dyn VectorIndex>,
     embedder: Arc<E>,
     extractor: Arc<X>,
 }
@@ -117,8 +118,9 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
         let graph = Arc::new(graph);
 
         // Open vector layer
-        let vector = VectorLayer::open(&config.store.vector_path, config.store.vector_dimensions)?;
-        let vector = Arc::new(vector);
+        let vector =
+            UsearchVectorLayer::open(&config.store.vector_path, config.store.vector_dimensions)?;
+        let vector: Arc<dyn VectorIndex> = Arc::new(vector);
 
         // Cold start: restore vector label mappings from redb
         let needs_rebuild = !vector.index_file_exists() || vector.is_empty();
@@ -144,6 +146,11 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
                 );
 
                 let all_nodes = graph.all_nodes()?;
+
+                info!(
+                    node_count = node_count,
+                    "beginning cold-start vector index rebuild — this may take a moment"
+                );
 
                 // Re-embed every node. We do this sequentially to avoid overwhelming
                 // the embedder. A future optimization could batch these calls.
@@ -172,6 +179,14 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
                     }
 
                     entries.push((node.id, embedding));
+
+                    if entries.len().is_multiple_of(100) && !entries.is_empty() {
+                        info!(
+                            progress = entries.len(),
+                            total = all_nodes.len(),
+                            "cold-start rebuild in progress"
+                        );
+                    }
                 }
 
                 // Rebuild the usearch index from the re-embedded entries
@@ -838,20 +853,35 @@ impl<E: Embedder, X: Extractor> Store<E, X> {
                 let graph_for_boost = self.graph.clone();
                 let config_for_boost = self.config.clone();
                 let nodes_for_link = nodes.clone();
+                // Pass the embeddings computed in Step 1 into the linking task so the
+                // vector_search closure can use the correct embedding for each node.
+                // This resolves the dummy-query bug — each node is now searched with
+                // its own actual embedding rather than a zero-vector.
+                let embeddings_for_link = embeddings.clone();
 
                 let handle = tokio::spawn(async move {
+                    let dims = vector_for_link.dimensions();
                     linking::execute_linking_pass(
                         ingest_id,
                         &nodes_for_link,
                         &linking_config,
-                        // vector_search closure
-                        move |_node_id| {
-                            // Search for similar existing nodes using a zero-vector as a
-                            // fallback. A production implementation would cache embeddings
-                            // from the ingest step or re-embed from stored source text.
-                            let dims = vector_for_link.dimensions();
-                            let dummy_query = vec![0.0f32; dims];
-                            vector_for_link.search(&dummy_query, linking_config.top_k_candidates)
+                        // vector_search closure — uses the embedding from the ingest step.
+                        move |node_id| {
+                            let embedding = embeddings_for_link
+                                .iter()
+                                .find(|(id, _)| *id == node_id)
+                                .map(|(_, emb)| emb.clone())
+                                .unwrap_or_else(|| {
+                                    // Should not happen in normal operation — every ingested
+                                    // node has its embedding computed in Step 1.
+                                    tracing::warn!(
+                                        node_id = %node_id,
+                                        "embedding not found for node during linking — \
+                                         falling back to zero-vector"
+                                    );
+                                    vec![0.0f32; dims]
+                                });
+                            vector_for_link.search(&embedding, linking_config.top_k_candidates)
                         },
                         // get_existing_edges closure
                         move |node_id| {

@@ -17,9 +17,10 @@ use usearch::{Index, IndexOptions, MetricKind, ScalarKind};
 use uuid::Uuid;
 
 use crate::error::{EchoError, ErrorContext};
+use crate::vector_index::VectorIndex;
 
 // ---------------------------------------------------------------------------
-// VectorLayer
+// UsearchVectorLayer
 // ---------------------------------------------------------------------------
 
 /// The usearch-backed vector storage layer. Handles embedding storage and ANN search.
@@ -30,9 +31,12 @@ use crate::error::{EchoError, ErrorContext};
 /// Thread safety: the usearch `Index` is internally thread-safe for concurrent reads.
 /// Writes are serialized through the `RwLock` on `label_to_uuid`. The `RwLock` protects
 /// the mapping tables — usearch itself handles its own internal locking.
-impl std::fmt::Debug for VectorLayer {
+///
+/// Implements [`VectorIndex`] so callers can hold `Arc<dyn VectorIndex>` to decouple
+/// from the concrete usearch backend.
+impl std::fmt::Debug for UsearchVectorLayer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("VectorLayer")
+        f.debug_struct("UsearchVectorLayer")
             .field("dimensions", &self.dimensions)
             .field("index_path", &self.index_path)
             .field("size", &self.index.size())
@@ -40,7 +44,7 @@ impl std::fmt::Debug for VectorLayer {
     }
 }
 
-pub struct VectorLayer {
+pub struct UsearchVectorLayer {
     /// The usearch ANN index.
     index: Index,
 
@@ -62,7 +66,7 @@ pub struct VectorLayer {
     uuid_to_label: RwLock<HashMap<Uuid, u64>>,
 }
 
-impl VectorLayer {
+impl UsearchVectorLayer {
     /// Open or create the usearch index at the given path with the specified dimensionality.
     ///
     /// If the index file exists and is valid, it is loaded. If it is missing or corrupt,
@@ -559,17 +563,78 @@ impl VectorLayer {
     }
 }
 
+// ---------------------------------------------------------------------------
+// VectorIndex trait implementation
+// ---------------------------------------------------------------------------
+
+impl VectorIndex for UsearchVectorLayer {
+    fn add(&self, node_id: Uuid, embedding: &[f32]) -> Result<u64, EchoError> {
+        self.add(node_id, embedding)
+    }
+
+    fn add_batch(&self, embeddings: &[(Uuid, Vec<f32>)]) -> Result<Vec<(Uuid, u64)>, EchoError> {
+        self.add_batch(embeddings)
+    }
+
+    fn search(&self, query_embedding: &[f32], limit: usize) -> Result<Vec<(Uuid, f32)>, EchoError> {
+        self.search(query_embedding, limit)
+    }
+
+    fn remove(&self, node_id: Uuid) -> Result<(), EchoError> {
+        self.remove(node_id)
+    }
+
+    fn contains(&self, node_id: Uuid) -> Result<bool, EchoError> {
+        self.contains(node_id)
+    }
+
+    fn get_label(&self, node_id: Uuid) -> Result<Option<u64>, EchoError> {
+        self.get_label(node_id)
+    }
+
+    fn save(&self) -> Result<(), EchoError> {
+        self.save()
+    }
+
+    fn restore_mappings(&self, mappings: &[(Uuid, u64)]) -> Result<(), EchoError> {
+        self.restore_mappings(mappings)
+    }
+
+    fn rebuild_from_embeddings(
+        &self,
+        entries: &[(Uuid, Vec<f32>)],
+    ) -> Result<Vec<(Uuid, u64)>, EchoError> {
+        self.rebuild_from_embeddings(entries)
+    }
+
+    fn dimensions(&self) -> usize {
+        self.dimensions()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn index_file_exists(&self) -> bool {
+        self.index_file_exists()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    /// Create a VectorLayer in a temporary directory for testing.
-    fn temp_vector_layer(dimensions: usize) -> (VectorLayer, TempDir) {
+    /// Create a UsearchVectorLayer in a temporary directory for testing.
+    fn temp_vector_layer(dimensions: usize) -> (UsearchVectorLayer, TempDir) {
         let dir = TempDir::new().expect("failed to create temp dir");
         let index_path = dir.path().join("test_vectors.usearch");
-        let layer =
-            VectorLayer::open(&index_path, dimensions).expect("failed to create vector layer");
+        let layer = UsearchVectorLayer::open(&index_path, dimensions)
+            .expect("failed to create vector layer");
         (layer, dir)
     }
 
@@ -590,7 +655,7 @@ mod tests {
     fn zero_dimensions_is_rejected() {
         let dir = TempDir::new().expect("failed to create temp dir");
         let index_path = dir.path().join("test.usearch");
-        let result = VectorLayer::open(&index_path, 0);
+        let result = UsearchVectorLayer::open(&index_path, 0);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err().code,
@@ -815,7 +880,7 @@ mod tests {
         // Create index, add a vector, save
         {
             let layer =
-                VectorLayer::open(&index_path, dims).expect("failed to create vector layer");
+                UsearchVectorLayer::open(&index_path, dims).expect("failed to create vector layer");
             layer
                 .add(node_id, &make_embedding(dims, 0.7))
                 .expect("add should succeed");
@@ -825,7 +890,7 @@ mod tests {
         // Reopen — the index file should be loaded
         {
             let layer =
-                VectorLayer::open(&index_path, dims).expect("failed to reopen vector layer");
+                UsearchVectorLayer::open(&index_path, dims).expect("failed to reopen vector layer");
             // The index should have the vector (loaded from file)
             assert_eq!(layer.len(), 1, "reloaded index should have 1 vector");
 
